@@ -1406,6 +1406,67 @@ pub fn write_settings(app: &AppHandle, settings: AppSettings) {
         .expect("Failed to initialize store");
 
     store.set("settings", serde_json::to_value(&settings).unwrap());
+
+    restrict_settings_store_permissions(app);
+}
+
+/// VEKTRUN: 0600 sobre `settings_store.json`.
+///
+/// Comprobado en una instalacion real el 7-ago-2026: el fichero quedaba 0644, y
+/// dentro va `post_process_api_keys` EN CLARO — las claves de OpenAI,
+/// Anthropic, Groq y del proveedor propio. `SecretMap` solo redacta en `Debug`
+/// (logs y trazas de panico); al serializar lleva `#[serde(transparent)]`, asi
+/// que al disco van tal cual.
+///
+/// El primer intento de este endurecimiento solo cubrio `history.db` y
+/// `recordings/`. Este fichero es MAS sensible que aquellos y se quedo fuera:
+/// un dictado es un dictado, una clave abre la cuenta entera.
+///
+/// Se llama en cada escritura a proposito: el plugin de store puede recrear el
+/// fichero, y un chmod sobre algo que ya esta a 0600 no cuesta nada. Si aun no
+/// existe, no hay nada que hacer y se sale en silencio.
+///
+/// Esto NO sustituye a guardar las claves en el llavero del sistema, que es lo
+/// correcto y sigue pendiente. Reduce la exposicion; no la elimina.
+///
+/// **Necesita el `AppHandle`, no vale `portable::store_path`.** El primer
+/// intento uso `store_path`, que en modo NO portatil devuelve la ruta relativa
+/// `"settings_store.json"` — el plugin de store la resuelve luego contra el
+/// directorio de datos, pero nosotros no. El `exists()` daba falso y la funcion
+/// salia en silencio: el fichero se quedo a 0644 y el codigo parecia correcto.
+/// Se vio mirando los permisos reales de una instalacion, no leyendo el codigo.
+pub fn restrict_settings_store_permissions(app: &AppHandle) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = match crate::portable::app_data_dir(app) {
+            Ok(dir) => dir,
+            Err(e) => {
+                log::warn!("No se pudo resolver el directorio de datos para el store: {e}");
+                return;
+            }
+        };
+        let path = dir.join(SETTINGS_STORE_PATH);
+
+        if !path.exists() {
+            // Solo es normal antes del primer guardado. Si sale despues, algo
+            // no cuadra y queremos verlo: un salto silencioso aqui es lo que
+            // dejo el fichero a 0644 la primera vez.
+            log::debug!("El store aun no existe en {path:?}; nada que endurecer");
+            return;
+        }
+
+        match std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)) {
+            Ok(()) => log::debug!("Permisos del store restringidos a 0600: {path:?}"),
+            Err(e) => log::warn!("No se pudieron restringir los permisos de {path:?}: {e}"),
+        }
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = app;
+    }
 }
 
 pub fn get_bindings(app: &AppHandle) -> HashMap<String, ShortcutBinding> {

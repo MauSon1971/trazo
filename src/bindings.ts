@@ -760,6 +760,25 @@ async getMicrophoneMode() : Promise<Result<boolean, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * VEKTRUN: persiste la ganancia de microfono y la empuja al grabador vivo.
+ * 
+ * Antes de esto `microphone_gain` no tenia comando ni entrada en
+ * `settingUpdaters`: el slider se movia, mostraba el valor y **nunca llegaba a
+ * Rust**. Todo `input_gain.rs` corria siempre a 1.0.
+ * 
+ * El saneado (NaN, 0, negativo, infinito -> unidad; y clamp del rango) vive en
+ * `settings::effective_microphone_gain`, no aqui, para que el valor que se
+ * aplica sea exactamente el que lee el hilo de captura.
+ */
+async changeMicrophoneGainSetting(gain: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_microphone_gain_setting", { gain }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getWindowsMicrophonePermissionStatus() : Promise<WindowsMicrophonePermissionStatus> {
     return await TAURI_INVOKE("get_windows_microphone_permission_status");
 },
@@ -944,8 +963,10 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Stub implementation for non-macOS platforms
- * Always returns false since laptop detection is macOS-specific
+ * Checks if the Mac is a laptop by detecting battery presence
+ * 
+ * This uses pmset to check for battery information.
+ * Returns true if a battery is detected (laptop), false otherwise (desktop)
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {

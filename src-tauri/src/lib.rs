@@ -810,6 +810,11 @@ pub fn run(cli_args: CliArgs) {
             // at an empty directory unless their data is brought across first.
             rebrand_migration::run(app.handle());
 
+            // VEKTRUN: el store guarda las claves API en claro. Se endurece en
+            // cada escritura (`write_settings`), pero un usuario que nunca toca
+            // un ajuste no pasaria por ahi nunca. Aqui se cubre el arranque.
+            settings::restrict_settings_store_permissions(app.handle());
+
             // Headless one-shot path (`--transcribe-file` / `--list-devices` /
             // `--list-models`): initialize only what transcription needs — the
             // store/paths plugins, the model + transcription managers, and the
