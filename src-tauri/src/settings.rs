@@ -1424,6 +1424,94 @@ pub fn get_stored_binding(app: &AppHandle, id: &str) -> ShortcutBinding {
 
 /// The microphone gain to actually apply, clamped into the usable range.
 ///
+/// VEKTRUN: valida la URL base del proveedor `custom` antes de guardarla.
+///
+/// El post-procesado envia la transcripcion ENTERA al endpoint configurado. Tal
+/// como venia, el setter solo comprobaba que el proveedor fuera `custom` y
+/// asignaba la cadena tal cual: `http://198.51.100.7:11434/v1` se aceptaba sin
+/// un error y sin un aviso, y el dictado salia en claro por la red.
+///
+/// La regla es la mas estricta que no rompe el caso legitimo:
+/// - `https://` a cualquier host — cifrado extremo a extremo, se acepta.
+/// - `http://` SOLO a loopback — es el caso de Ollama en la propia maquina,
+///   donde el trafico no toca la red.
+/// - cualquier otra cosa se rechaza con el motivo escrito.
+///
+/// Un Ollama en OTRA maquina (p. ej. `msvr`) NO entra por `http://`: o va por
+/// HTTPS, o el tunel (WireGuard) es quien cifra y entonces la URL sigue siendo
+/// `http://` a una IP privada — caso que este validador rechaza a proposito.
+/// Preferimos el falso positivo: que alguien tenga que pararse a pensar antes
+/// de mandar dictados en claro.
+///
+/// Es pura para poder probarla sin red ni `AppSettings`.
+pub fn validate_custom_base_url(base_url: &str) -> Result<(), String> {
+    let trimmed = base_url.trim();
+
+    if trimmed.is_empty() {
+        return Err("La URL base no puede estar vacia".to_string());
+    }
+
+    let (scheme, rest) = match trimmed.split_once("://") {
+        Some(parts) => parts,
+        None => {
+            return Err(format!(
+                "La URL base debe empezar por https:// (o http:// si es local). Recibido: {trimmed}"
+            ))
+        }
+    };
+
+    match scheme.to_ascii_lowercase().as_str() {
+        "https" => Ok(()),
+        "http" => {
+            // El host es lo que va antes de la primera '/', y sin credenciales
+            // ni puerto.
+            let authority = rest.split('/').next().unwrap_or("");
+            let authority = authority.rsplit('@').next().unwrap_or(authority);
+
+            let host = if let Some(end) = authority.strip_prefix('[') {
+                // IPv6 literal: [::1]:11434
+                end.split(']').next().unwrap_or("")
+            } else {
+                authority.split(':').next().unwrap_or("")
+            };
+
+            if is_loopback_host(host) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "http:// solo se admite contra la propia maquina (localhost o 127.0.0.1). \
+                     '{host}' es remoto: el dictado viajaria en claro. Usa https://."
+                ))
+            }
+        }
+        other => Err(format!(
+            "Esquema '{other}' no admitido. Usa https:// (o http:// si es local)."
+        )),
+    }
+}
+
+/// Loopback segun el propio host, sin resolver DNS (resolver aqui abriria la
+/// puerta a que un nombre que hoy apunta a 127.0.0.1 apunte manana a otro sitio).
+///
+/// La comparacion numerica va por `IpAddr::is_loopback`, NO por
+/// `starts_with("127.")`: ese prefijo aceptaria `127.0.0.1.evil.com`, que es un
+/// nombre de dominio corriente que empieza igual y resuelve donde su dueno
+/// quiera. Parsear como IP lo rechaza porque no es una IP.
+fn is_loopback_host(host: &str) -> bool {
+    let host = host.trim().to_ascii_lowercase();
+
+    if host == "localhost" {
+        return true;
+    }
+
+    match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback(),
+        // No es una IP: solo vale el literal "localhost", ya comprobado.
+        // Cualquier otro nombre exigiria resolver DNS, y eso no se hace aqui.
+        Err(_) => false,
+    }
+}
+
 /// Goes through [`sanitize_microphone_gain`] rather than reading the field
 /// directly, because the store is a plain JSON file a user can edit.
 pub fn effective_microphone_gain(settings: &AppSettings) -> f32 {
@@ -1438,6 +1526,94 @@ pub fn get_history_limit(app: &AppHandle) -> usize {
 pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeriod {
     let settings = get_settings(app);
     settings.recording_retention_period
+}
+
+#[cfg(test)]
+mod vektrun_base_url_tests {
+    use super::validate_custom_base_url as check;
+
+    #[test]
+    fn https_a_cualquier_host_se_acepta() {
+        assert!(check("https://api.openai.com/v1").is_ok());
+        assert!(check("https://llm.vektrun.com/v1").is_ok());
+        assert!(check("https://198.51.100.7:8443/v1").is_ok());
+    }
+
+    #[test]
+    fn http_a_loopback_se_acepta() {
+        // El caso real: Ollama en la propia maquina. El trafico no toca la red.
+        assert!(check("http://localhost:11434/v1").is_ok());
+        assert!(check("http://127.0.0.1:11434/v1").is_ok());
+        assert!(check("http://127.1.2.3:11434/v1").is_ok());
+        assert!(check("http://[::1]:11434/v1").is_ok());
+    }
+
+    #[test]
+    fn http_a_host_remoto_se_rechaza() {
+        // Este es el agujero que se cierra: antes se guardaba sin decir nada y
+        // el dictado entero salia en claro por la red.
+        let err = check("http://198.51.100.7:11434/v1").unwrap_err();
+        assert!(err.contains("198.51.100.7"), "got {err}");
+        assert!(err.contains("claro"), "el motivo tiene que estar escrito: {err}");
+
+        assert!(check("http://msvr:11434/v1").is_err());
+        assert!(check("http://10.0.0.5:11434/v1").is_err());
+    }
+
+    #[test]
+    fn un_host_que_solo_empieza_como_loopback_no_cuela() {
+        // Este es el motivo de que la comprobacion numerica sea
+        // `IpAddr::is_loopback` y no `starts_with("127.")`: los tres de abajo
+        // empiezan igual que un loopback y son dominios de un tercero.
+        assert!(
+            check("http://127.0.0.1.evil.com/v1").is_err(),
+            "un dominio que EMPIEZA por 127. no es loopback"
+        );
+        assert!(check("http://localhost.evil.com/v1").is_err());
+        assert!(check("http://notlocalhost/v1").is_err());
+    }
+
+    #[test]
+    fn credenciales_en_la_url_no_disfrazan_el_host() {
+        // `http://127.0.0.1@evil.com/` tiene el host EVIL.COM, no loopback:
+        // todo lo anterior al ultimo '@' es usuario:clave.
+        assert!(
+            check("http://127.0.0.1@evil.com/v1").is_err(),
+            "el host real es evil.com"
+        );
+    }
+
+    #[test]
+    fn esquemas_raros_y_vacios_se_rechazan_con_motivo() {
+        assert!(check("").is_err());
+        assert!(check("   ").is_err());
+        assert!(check("localhost:11434").is_err(), "sin esquema no vale");
+        assert!(check("ftp://host/v1").is_err());
+        assert!(check("file:///etc/passwd").is_err());
+        assert!(check("apple-intelligence://local").is_err());
+    }
+
+    #[test]
+    fn el_esquema_no_distingue_mayusculas() {
+        assert!(check("HTTPS://api.openai.com/v1").is_ok());
+        assert!(check("HtTp://LOCALHOST:11434/v1").is_ok());
+    }
+
+    #[test]
+    fn el_default_de_fabrica_del_proveedor_custom_pasa_su_propia_validacion() {
+        // Si el default no pasara, la app arrancaria con un valor que ella
+        // misma rechaza al guardarlo.
+        let providers = super::default_post_process_providers();
+        let custom = providers
+            .iter()
+            .find(|p| p.id == "custom")
+            .expect("el proveedor custom tiene que existir");
+        assert!(
+            check(&custom.base_url).is_ok(),
+            "el default de fabrica no pasa la validacion: {}",
+            custom.base_url
+        );
+    }
 }
 
 #[cfg(test)]

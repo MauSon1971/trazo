@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Local, Utc};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use rusqlite::{params, Connection, OptionalExtension};
 use rusqlite_migration::{Migrations, M};
 use serde::{Deserialize, Serialize};
@@ -99,7 +99,58 @@ impl HistoryManager {
         // Initialize database and run migrations synchronously
         manager.init_database()?;
 
+        // VEKTRUN: el historial son los ultimos dictados CON su audio — nombre
+        // del cliente, importes, asuntos de correo. Sin esto queda 0644 (umask
+        // 022), legible por cualquier otro usuario de la maquina y por
+        // cualquier proceso que corra bajo esta cuenta.
+        manager.restrict_permissions();
+
         Ok(manager)
+    }
+
+    /// VEKTRUN: 0600 sobre la base y 0700 sobre las grabaciones.
+    ///
+    /// Se llama DESPUES de `init_database` a proposito: SQLite crea `-wal` y
+    /// `-shm` al abrir la conexion, y antes de eso no existen.
+    ///
+    /// No falla el arranque si no puede: una app de dictado que no arranca es
+    /// peor que una con permisos flojos, pero el aviso queda escrito — un
+    /// fallo silencioso aqui es exactamente lo que no queremos.
+    fn restrict_permissions(&self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let files = [
+                self.db_path.clone(),
+                self.db_path.with_extension("db-wal"),
+                self.db_path.with_extension("db-shm"),
+            ];
+
+            for path in files.iter().filter(|p| p.exists()) {
+                if let Err(e) = fs::set_permissions(path, fs::Permissions::from_mode(0o600)) {
+                    warn!("No se pudieron restringir los permisos de {path:?}: {e}");
+                }
+            }
+
+            if let Err(e) = fs::set_permissions(
+                &self.recordings_dir,
+                fs::Permissions::from_mode(0o700),
+            ) {
+                warn!(
+                    "No se pudieron restringir los permisos de {:?}: {e}",
+                    self.recordings_dir
+                );
+            }
+        }
+
+        // En Windows los permisos van por ACL y `set_permissions` solo toca el
+        // bit de solo-lectura, que no es lo que queremos. Queda pendiente y
+        // escrito, no dado por hecho.
+        #[cfg(not(unix))]
+        {
+            debug!("restrict_permissions: sin efecto fuera de Unix (pendiente ACL en Windows)");
+        }
     }
 
     fn init_database(&self) -> Result<()> {

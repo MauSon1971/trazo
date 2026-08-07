@@ -155,6 +155,10 @@ export const settingUpdaters: {
     commands.changeMuteWhileRecordingSetting(value as boolean),
   recording_volume: (value) =>
     commands.changeRecordingVolumeSetting(value as number | null),
+  // VEKTRUN: faltaba. Sin esta entrada el slider caia en el `console.warn`
+  // final ("No handler for setting") y el valor no salia nunca del navegador.
+  microphone_gain: (value) =>
+    commands.changeMicrophoneGainSetting(value as number),
   append_trailing_space: (value) =>
     commands.changeAppendTrailingSpaceSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),

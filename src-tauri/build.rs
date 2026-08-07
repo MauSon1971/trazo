@@ -365,7 +365,26 @@ fn build_apple_intelligence_bridge() {
     // Check if the SDK supports FoundationModels (required for Apple Intelligence)
     let framework_path =
         Path::new(&sdk_path).join("System/Library/Frameworks/FoundationModels.framework");
-    let has_foundation_models = framework_path.exists();
+    // VEKTRUN: escape para cuando el puente real NO compila contra el SDK
+    // instalado.
+    //
+    // Con macOS 26.5 / Swift 6.3.2 (SDK con FoundationModels presente), el
+    // fichero real falla: `CleanedTranscript` ya no cumple `Generable` con la
+    // firma nueva de `respond(to:generating:...)`. Como la eleccion se hace por
+    // "existe el framework", el build entra en el camino roto y NO HAY manera
+    // de compilar la aplicacion en esa maquina — ni siquiera para correr los
+    // tests de Rust, que no tocan Apple Intelligence.
+    //
+    // Es un fallo HEREDADO de upstream (`git diff dad37ba..HEAD -- swift/` sale
+    // vacio) y upstream tampoco lo ha corregido a 7-ago-2026.
+    //
+    // `VEKTRUN_FORCE_AI_STUB=1` fuerza el stub: se pierde Apple Intelligence
+    // como proveedor de post-procesado (que no usamos: vamos contra Ollama
+    // propio) y todo lo demas compila. Es opt-in a proposito — sin la variable
+    // el comportamiento es exactamente el de upstream, para que el dia que
+    // arreglen el Swift nadie se quede con el stub sin enterarse.
+    let has_foundation_models =
+        framework_path.exists() && std::env::var_os("VEKTRUN_FORCE_AI_STUB").is_none();
 
     let source_file = if has_foundation_models {
         println!("cargo:warning=Building with Apple Intelligence support.");

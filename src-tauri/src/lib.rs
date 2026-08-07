@@ -650,6 +650,7 @@ pub fn run(cli_args: CliArgs) {
             commands::models::has_dedicated_gpu,
             commands::audio::update_microphone_mode,
             commands::audio::get_microphone_mode,
+            commands::audio::change_microphone_gain_setting,
             commands::audio::get_windows_microphone_permission_status,
             commands::audio::open_microphone_privacy_settings,
             commands::audio::get_available_microphones,
@@ -777,7 +778,19 @@ pub fn run(cli_args: CliArgs) {
     builder
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        // VEKTRUN: el plugin del actualizador NO se registra a proposito.
+        //
+        // Tal como venia, `update_checks_enabled` estaba a true por defecto y el
+        // endpoint apuntaba al repo de un tercero. Eso es un canal de ejecucion
+        // remota sobre un binario con permisos de Accesibilidad: el primer
+        // `latest.json` que apareciera en ese repo se instalaba solo.
+        //
+        // No basta con vaciar `plugins.updater` en tauri.conf.json: mientras el
+        // plugin siga registrado, el camino existe. Se corta aqui.
+        //
+        // Para reactivarlo hace falta ANTES: clave minisign propia custodiada por
+        // Vektrun, endpoint bajo dominio propio, y firma de SO (notarizacion en
+        // macOS, certificado propio en Windows).
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_macos_permissions::init())

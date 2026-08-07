@@ -953,6 +953,14 @@ pub fn change_post_process_base_url_setting(
         ));
     }
 
+    // VEKTRUN: el dictado entero viaja a esta URL. https:// a cualquier host, o
+    // http:// solo a loopback. Antes se aceptaba cualquier cosa sin avisar.
+    settings::validate_custom_base_url(&base_url)?;
+
+    let provider = settings
+        .post_process_provider_mut(&provider_id)
+        .expect("Provider looked up above must exist");
+
     provider.base_url = base_url;
     settings::write_settings(&app, settings);
     Ok(())

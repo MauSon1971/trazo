@@ -42,6 +42,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # VEKTRUN: los 15 ficheros *.test.ts existian desde hacia meses y NINGUN
+      # workflow los ejecutaba — no habia script `test` en package.json, y
+      # `test:playwright` corre otra cosa. 89 casos escritos, cero ejercitados.
+      #
+      # Va ANTES de lint y formato a proposito: si algo esta roto de verdad,
+      # que se entere por el test y no por una comilla mal puesta.
+      - name: Run unit tests
+        run: bun test src/
+
       - name: Check translation consistency
         run: bun run check:translations
 

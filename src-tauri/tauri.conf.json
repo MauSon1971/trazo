@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "targets": "all",
     "resources": [
       "resources/**/*"
@@ -73,18 +73,10 @@
       }
     },
     "windows": {
-      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net/ -a CJ-Signing -c cjpais-dev -d Handy %1",
       "nsis": {
         "template": "nsis/installer.nsi"
       }
     }
   },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDQyNjIxNURBNDVBQzY3NzYKUldSMlo2eEYyaFZpUWdrdGpzaEYya0VqM3VvUmRiSmdjZTR5NTRpZUx3NFAvaFBrbkVBNS9zbHgK",
-      "endpoints": [
-        "https://github.com/JuanIA-sketch/trazo/releases/latest/download/latest.json"
-      ]
-    }
-  }
+  "plugins": {}
 }

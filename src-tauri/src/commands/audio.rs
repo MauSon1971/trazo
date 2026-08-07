@@ -176,6 +176,30 @@ pub fn get_microphone_mode(app: AppHandle) -> Result<bool, String> {
     Ok(settings.always_on_microphone)
 }
 
+/// VEKTRUN: persiste la ganancia de microfono y la empuja al grabador vivo.
+///
+/// Antes de esto `microphone_gain` no tenia comando ni entrada en
+/// `settingUpdaters`: el slider se movia, mostraba el valor y **nunca llegaba a
+/// Rust**. Todo `input_gain.rs` corria siempre a 1.0.
+///
+/// El saneado (NaN, 0, negativo, infinito -> unidad; y clamp del rango) vive en
+/// `settings::effective_microphone_gain`, no aqui, para que el valor que se
+/// aplica sea exactamente el que lee el hilo de captura.
+#[tauri::command]
+#[specta::specta]
+pub fn change_microphone_gain_setting(app: AppHandle, gain: f32) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings.microphone_gain = gain;
+    write_settings(&app, settings.clone());
+
+    // Al grabador abierto tambien, no solo al disco: en always-on el stream no
+    // se reabre entre dictados.
+    let rm = app.state::<Arc<AudioRecordingManager>>();
+    rm.apply_input_gain(crate::settings::effective_microphone_gain(&settings));
+
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn get_available_microphones() -> Result<Vec<AudioDevice>, String> {

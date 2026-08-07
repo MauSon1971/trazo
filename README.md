@@ -1,12 +1,29 @@
-# Handy
+# Trazo
 
-[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/invite/WVBeWsNXK4)
+**Trazo is an unofficial fork of [Handy](https://github.com/cjpais/Handy), created by
+[CJ Pais](https://github.com/cjpais) and released under the MIT licence.**
+
+Handy is the engine: local Whisper/Parakeet transcription, voice activity detection, global
+shortcuts and text insertion are all its work. Trazo adds a Spanish-first layer on top — an email
+formaliser, a replacement dictionary, microphone gain, a silence gate and a redesigned interface.
+
+Trazo is **not affiliated with, endorsed by, or supported by** the Handy project. Please do not file
+Trazo issues on Handy's tracker. The Handy name, logo, icon and brand assets are not open source and
+are not used here; Trazo ships under its own branding.
+
+If Trazo is useful to you, the credit belongs upstream: **[handy.computer](https://handy.computer)**
+· **[github.com/cjpais/Handy](https://github.com/cjpais/Handy)**.
+
+> **This checkout is a Vektrun hardening branch.** The automatic updater has been removed on
+> purpose — see `src-tauri/src/lib.rs`. Builds from this branch never self-update.
+
+---
 
 **A free, open source, and extensible speech-to-text application that works completely offline.**
 
-Handy is a cross-platform desktop application that provides simple, privacy-focused speech transcription. Press a shortcut, speak, and have your words appear in any text field. This happens on your own computer without sending any information to the cloud.
+Trazo is a cross-platform desktop application that provides simple, privacy-focused speech transcription. Press a shortcut, speak, and have your words appear in any text field. This happens on your own computer without sending any information to the cloud.
 
-## Why Handy?
+## Why Handy? (upstream's rationale, which Trazo inherits)
 
 Handy was created to fill the gap for a truly open source, extensible speech-to-text tool. As stated on [handy.computer](https://handy.computer):
 

@@ -528,6 +528,25 @@ impl AudioRecordingManager {
         }
 
         *open_flag = false;
+    }
+
+    /// VEKTRUN: empuja la ganancia al grabador YA ABIERTO.
+    ///
+    /// `try_start_recording` relee la ganancia en cada `open()`, lo que cubre el
+    /// modo bajo demanda. Pero en **always-on** el stream no se reabre entre
+    /// dictados, asi que sin esto un cambio del slider no llegaria hasta
+    /// reiniciar la aplicacion.
+    ///
+    /// `SharedGain` es un atomico compartido con el hilo de captura: escribir
+    /// aqui alcanza a un dictado ya en curso, que es lo que su documentacion
+    /// prometia y nadie cableaba.
+    ///
+    /// No abre el grabador si no lo estaba: si esta cerrado, el `open()` de la
+    /// proxima grabacion ya releera el ajuste.
+    pub fn apply_input_gain(&self, gain: f32) {
+        if let Some(rec) = self.recorder.lock().unwrap().as_mut() {
+            rec.set_input_gain(gain);
+        }
         debug!("Microphone stream stopped");
     }
 
